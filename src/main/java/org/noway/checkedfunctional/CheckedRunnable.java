@@ -2,6 +2,7 @@ package org.noway.checkedfunctional;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
@@ -33,17 +34,13 @@ public interface CheckedRunnable<E extends Exception> {
             });
 
             //throw first caught exception, add all other as suppressed exceptions.
-            if (!exceptions.isEmpty()) {
-                E exception = exceptions.get(0);
-                exceptions.subList(1, exceptions.size()).forEach(exception::addSuppressed);
-                throw exception;
-            }
+            throwAsSuppressedExceptions(exceptions);
         };
     }
 
     static <E extends Exception> void runConcurrently(CheckedRunnable<? extends E>... runnables) throws E {
         //create completable futures out of runnables and catch all checked exceptions
-        List<Throwable> thrownExceptions = new ArrayList<>();
+        final List<Throwable> thrownExceptions = Collections.synchronizedList(new ArrayList<>());
         CompletableFuture[] completableFutures = Arrays.stream(runnables).map(cr -> CompletableFuture
                 .runAsync(cr.toRunnable()).exceptionally(ex -> {
                     thrownExceptions.add(ex);
@@ -61,11 +58,7 @@ public interface CheckedRunnable<E extends Exception> {
                 -> (E) t).collect
                 (Collectors.toList());
 
-        if (!unpackedExceptions.isEmpty()) {
-            E exception = unpackedExceptions.get(0);
-            unpackedExceptions.subList(1, unpackedExceptions.size()).forEach(exception::addSuppressed);
-            throw exception;
-        }
+        throwAsSuppressedExceptions(unpackedExceptions);
     }
 
     //E1 extends RE to ensure RE is super type exception of both E1, E2. However, E1 is not inferred by a typed
@@ -164,8 +157,18 @@ public interface CheckedRunnable<E extends Exception> {
     /**
      * The action to execute.
      *
-     * @throws E type of exception to throw
+     * @throws E a generic exception to throw
      */
     void run() throws E;
+
+
+    private static <E extends Exception> void throwAsSuppressedExceptions(List<E> exceptions) throws E {
+        if (!exceptions.isEmpty()) {
+            E exception = exceptions.get(0);
+            exceptions.subList(1, exceptions.size()).forEach(exception::addSuppressed);
+            throw exception;
+        }
+    }
+
 }
 
